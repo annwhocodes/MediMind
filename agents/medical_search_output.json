@@ -1,0 +1,16 @@
+{
+  "query": "differential diagnosis for chest pain in diabetic patient",
+  "diagnostic_response": "I found information related to diabetes, hypertension, chest pain, fatigue, pain, heart. Medical information suggests:\n\n\u2022 For diabetes: Monitor blood sugar, follow dietary guidelines, take medications as prescribed.\n\u2022 For hypertension: Regular monitoring, medication adherence, lifestyle modifications.\n\nNote: This is general information. Please consult a healthcare provider for diagnosis and treatment.",
+  "search_results": {
+    "google_cse_results": 2,
+    "semantic_results": 2
+  },
+  "sources_used": [
+    "Knowledge: heart_attack",
+    "mayoclinic.org",
+    "Knowledge: diabetes"
+  ],
+  "timestamp": "2025-12-01T15:22:53.634997",
+  "agent_type": "MedicalSearchAgent",
+  "status": "success"
+}

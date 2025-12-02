@@ -1,0 +1,33 @@
+.button {
+  border-radius: 8px;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.25s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+}
+
+.primary {
+  background-color: #2684FF;
+  color: white;
+  border: none;
+}
+
+.primary:hover {
+  background-color: #0052CC;
+}
+
+.secondary {
+  background-color: white;
+  color: #2684FF;
+  border: 1px solid #2684FF;
+}
+
+.secondary:hover {
+  background-color: #F4F5F7;
+}

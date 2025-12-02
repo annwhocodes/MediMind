@@ -1,0 +1,18 @@
+{
+  "query": "differential diagnosis for chest pain in diabetic patient with hypertension",
+  "diagnostic_response": "## Differential Diagnosis for Chest Pain in Diabetic Patient with Hypertension\n\n**Key Findings:**\n\n* The patient's symptoms suggest a potential cardiovascular event due to the presence of chest pain, shortness of breath, and fatigue.\n* Diabetes mellitus type 2 can be a significant risk factor for cardiovascular events.\n* Hypertension can contribute to the development of cardiovascular complications.\n\n**Additional Considerations:**\n\n* The patient's age and gender suggest an increased risk of cardiac events.\n* The presence of diabetes and hypertension indicates a higher risk of vascular disease.\n* The patient's symptoms are consistent with a potential myocardial infarction, which is a medical emergency requiring immediate attention.\n\n**Medical Disclaimer:**\n\nThe information provided is intended for informational purposes only and should not be considered medical advice.",
+  "search_results": {
+    "google_cse_results": 3,
+    "semantic_results": 3
+  },
+  "sources": [
+    "Knowledge: heart_attack",
+    "Guideline: ADA",
+    "Web: mayoclinic.org",
+    "Knowledge: diabetes"
+  ],
+  "timestamp": "2025-12-01T16:08:10.513102",
+  "llm_model": "gemma:2b",
+  "agent_type": "MedicalSearchAgent_Ollama",
+  "status": "success"
+}
