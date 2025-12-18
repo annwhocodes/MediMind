@@ -12,15 +12,8 @@ from pathlib import Path
 
 # Import your updated search agent
 from search_agent import MedicalSearchAgent
-
-import sys
-print("DEBUG: Loading 'transformers' library (this may take a few seconds)...", file=sys.stderr)
 from transformers import pipeline
-print("DEBUG: 'transformers' library loaded.", file=sys.stderr)
-
-print("DEBUG: Loading 'torch' library...", file=sys.stderr)
 import torch
-print("DEBUG: 'torch' library loaded.", file=sys.stderr)
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -78,9 +71,7 @@ class MedicalDiagnosticAgent:
                 from transformers import AutoTokenizer, AutoModelForTokenClassification
                 
                 model_name = "emilyalsentzer/Bio_ClinicalBERT"
-                print(f"DEBUG: Loading Tokenizer for {model_name}...", file=sys.stderr)
                 self.bert_tokenizer = AutoTokenizer.from_pretrained(model_name)
-                print(f"DEBUG: Loading Model for {model_name} (This may utilize significant bandwidth/CPU)...", file=sys.stderr)
                 self.bert_model = AutoModelForTokenClassification.from_pretrained(model_name)
                 
                 self.bert_pipeline = pipeline(
@@ -191,8 +182,7 @@ class MedicalDiagnosticAgent:
                 current_symptoms = set(diagnostic_input.symptoms)
                 for finding in report_analysis['findings']:
                     # Only add if it looks like a symptom/condition (simple length check for now)
-                    # Avoid narrative sentences
-                    if len(finding) < 40 and not finding.lower().startswith(('he ', 'she ', 'his ', 'her ', 'the ')): 
+                    if len(finding) < 50: 
                         current_symptoms.add(finding)
                 diagnostic_input.symptoms = list(current_symptoms)
 
@@ -262,11 +252,8 @@ class MedicalDiagnosticAgent:
         query_parts = []
         
         # Add symptoms
-        query_symptoms = [s for s in diagnostic_input.symptoms if len(s) < 50]
-        if query_symptoms:
-            query_parts.append("differential diagnosis for " + ", ".join(query_symptoms))
-        else:
-            query_parts.append("complex medical case differential diagnosis")
+        if diagnostic_input.symptoms:
+            query_parts.append("differential diagnosis for " + ", ".join(diagnostic_input.symptoms))
         
         # Add demographic information if available
         if diagnostic_input.age and diagnostic_input.gender:
@@ -773,9 +760,8 @@ class MedicalDiagnosticAgent:
     
     def _extract_primary_diagnosis(self, search_response: str, symptoms: List[str]) -> str:
         """Extract primary diagnosis from search response - ONLY the diagnosis name"""
-        # NEW FORMAT: Look for PRIMARY DIAGNOSIS: (flexible regex)
-        # Matches: "PRIMARY DIAGNOSIS:", "**PRIMARY DIAGNOSIS:**", "# PRIMARY DIAGNOSIS", etc.
-        primary_match = re.search(r'(?:[*#\s]*)(?:PRIMARY DIAGNOSIS|Primary Diagnosis)(?:[*#\s]*):\s*\n?(.+?)(?=\n\n|CONFIDENCE:|Confidence:|[*#\s]*CONFIDENCE|$)', search_response, re.DOTALL | re.IGNORECASE)
+        # NEW FORMAT: Look for PRIMARY DIAGNOSIS:
+        primary_match = re.search(r'PRIMARY DIAGNOSIS:\s*\n?(.+?)(?=\n\n|CONFIDENCE:|$)', search_response, re.DOTALL | re.IGNORECASE)
         if primary_match:
             full_text = primary_match.group(1).strip()
             
@@ -821,8 +807,8 @@ class MedicalDiagnosticAgent:
         """Extract findings from search results and reports"""
         findings = []
         
-        # NEW FORMAT: Look for KEY FINDINGS: (flexible regex)
-        findings_match = re.search(r'(?:[*#\s]*)(?:KEY FINDINGS|Key Findings)(?:[*#\s]*):\s*\n(.+?)(?=\n\n(?:[*#\s]*)[A-Za-z\s]+(?:[*#\s]*):|$)', search_response, re.DOTALL | re.IGNORECASE)
+        # NEW FORMAT: Look for KEY FINDINGS:
+        findings_match = re.search(r'KEY FINDINGS:\s*\n(.+?)(?=\n\n[A-Z]+:|$)', search_response, re.DOTALL | re.IGNORECASE)
         if findings_match:
             section = findings_match.group(1).strip()
             lines = section.split('\n')
@@ -952,8 +938,8 @@ class MedicalDiagnosticAgent:
         """Generate differential diagnoses by parsing the LLM response"""
         differentials = []
         
-        # NEW FORMAT: Look for DIFFERENTIAL DIAGNOSES: (flexible regex)
-        diff_match = re.search(r'(?:[*#\s]*)(?:DIFFERENTIAL DIAGNOSES|Differential Diagnoses)(?:[*#\s]*):\s*\n(.+?)(?=\n\n(?:[*#\s]*)[A-Za-z\s]+(?:[*#\s]*):|$)', search_response, re.DOTALL | re.IGNORECASE)
+        # NEW FORMAT: Look for DIFFERENTIAL DIAGNOSES:
+        diff_match = re.search(r'DIFFERENTIAL DIAGNOSES:\s*\n(.+?)(?=\n\n[A-Z]+:|$)', search_response, re.DOTALL | re.IGNORECASE)
         
         if diff_match:
             section_content = diff_match.group(1).strip()
@@ -1073,9 +1059,9 @@ class MedicalDiagnosticAgent:
                             diagnostic_input: DiagnosticInput) -> float:
         """Calculate confidence score based on available information"""
         
-        # NEW: Try to extract confidence from LLM response first (flexible regex)
+        # NEW: Try to extract confidence from LLM response first
         search_response = search_results.get('diagnostic_response', '')
-        conf_match = re.search(r'(?:[*#\s]*)(?:CONFIDENCE|Confidence)(?:[*#\s]*):\s*\n?(.+?)(?=\n\n|DIFFERENTIAL|Differential|[*#\s]*DIFFERENTIAL|$)', search_response, re.DOTALL | re.IGNORECASE)
+        conf_match = re.search(r'CONFIDENCE:\\s*\\n?(.+?)(?=\\n\\n|DIFFERENTIAL|$)', search_response, re.DOTALL | re.IGNORECASE)
         if conf_match:
             conf_text = conf_match.group(1).strip()
             # Extract percentage: "85%" or "85" or "85 percent"

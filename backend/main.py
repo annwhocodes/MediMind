@@ -563,9 +563,14 @@ async def chat(request: ChatRequest):
         # Use search agent to get response
         try:
             # Use search method which is present in MedicalSearchAgent (Ollama version)
+            # Pass conversation history in diagnostic_context
             result = await search_agent.search(
                 query=request.message,
-                diagnostic_context=None
+                diagnostic_context={
+                    "conversation_history": [msg.dict() for msg in request.conversation_history],
+                    "symptoms": [], # Default empty
+                    "medical_history": "" # Default empty
+                }
             )
             
             # Key 'diagnostic_response' is used in the new agent, 'response' as fallback

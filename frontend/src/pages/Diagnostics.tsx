@@ -24,7 +24,12 @@ interface DiagnosticResult {
   }>;
   emergency_indicators: string[];
   follow_up?: string;
-  sources?: string[];
+  sources?: Array<{
+    name: string;
+    type?: string;
+    url?: string;
+    description?: string;
+  }>;
 }
 
 const DiagnosticsPage: FC = () => {
@@ -167,15 +172,15 @@ const DiagnosticsPage: FC = () => {
 
     try {
       const formData = new FormData();
-      
+
       // Add files
       files.forEach((file) => formData.append("files", file));
-      
+
       // Add other data
       formData.append("symptoms", JSON.stringify(symptoms));
       formData.append("medical_history", medicalHistory);
 
-      const response = await fetch("http://127.0.0.1:8000/analyze", {
+      const response = await fetch("http://127.0.0.1:8001/analyze", {
         method: "POST",
         body: formData,
       });
@@ -209,9 +214,8 @@ const DiagnosticsPage: FC = () => {
 
       {/* File Upload Area */}
       <div
-        className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 ${
-          isDragging ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-gray-50"
-        }`}
+        className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 ${isDragging ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-gray-50"
+          }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -532,15 +536,22 @@ const DiagnosticsPage: FC = () => {
               </h3>
               <ul className="space-y-1">
                 {results.sources.map((source, index) => (
-                  <li key={index} className="text-sm text-gray-600">
-                    <span className="mr-2">•</span>
-                    {source.includes('http') ? (
-                      <a href={source} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                        {source}
-                      </a>
-                    ) : (
-                      source
-                    )}
+                  <li key={index} className="text-sm text-gray-600 flex items-start">
+                    <span className="mr-2 mt-1">•</span>
+                    <span>
+                      <span className="font-medium">{source.name}</span>
+                      {source.url && (
+                        <>
+                          {' - '}
+                          <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                            View Source
+                          </a>
+                        </>
+                      )}
+                      {source.description && (
+                        <p className="text-xs text-gray-500 mt-0.5">{source.description}</p>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -558,7 +569,7 @@ const DiagnosticsPage: FC = () => {
             <button className="flex items-center bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded hover:bg-gray-50">
               <span className="mr-2">✉️</span> Email Results
             </button>
-            <button 
+            <button
               onClick={() => {
                 setResults(null);
                 setError(null);
@@ -575,7 +586,7 @@ const DiagnosticsPage: FC = () => {
           <div className="text-6xl mb-4">📋</div>
           <p className="text-lg">No results to display</p>
           <p className="text-sm mt-2">Please upload medical reports and analyze them.</p>
-          <button 
+          <button
             onClick={() => setActiveTab("upload")}
             className="mt-4 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
           >
@@ -607,15 +618,14 @@ const DiagnosticsPage: FC = () => {
             <div key={idx} className="bg-white border rounded-lg p-4">
               <div className="flex justify-between items-start mb-3">
                 <h3 className="text-lg font-semibold text-gray-800">{item.primary_diagnosis}</h3>
-                <span className={`px-2 py-1 rounded text-sm font-medium ${
-                  item.severity === "normal" ? "bg-green-100 text-green-800" :
+                <span className={`px-2 py-1 rounded text-sm font-medium ${item.severity === "normal" ? "bg-green-100 text-green-800" :
                   item.severity === "attention" ? "bg-yellow-100 text-yellow-800" :
-                  "bg-red-100 text-red-800"
-                }`}>
+                    "bg-red-100 text-red-800"
+                  }`}>
                   {item.severity}
                 </span>
               </div>
-              
+
               <div className="mb-3">
                 <span className="text-sm font-semibold text-gray-700">Confidence: </span>
                 <span className="text-sm text-gray-600">{Math.round(item.confidence_score * 100)}%</span>
@@ -661,7 +671,7 @@ const DiagnosticsPage: FC = () => {
               )}
             </div>
           ))}
-          
+
           <div className="text-center mt-6">
             <button
               onClick={() => setActiveTab("upload")}
@@ -676,96 +686,93 @@ const DiagnosticsPage: FC = () => {
   );
 
   return (
-  <MainLayout>
-    <div className="bg-white rounded-xl shadow-md overflow-hidden">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 p-4">
-        <h1 className="text-2xl font-bold text-white">AI Diagnostic Assistant</h1>
-        <p className="text-blue-100 text-sm">
-          Upload your medical reports for AI-powered insights and recommendations
-        </p>
-      </div>
+    <MainLayout>
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600 to-blue-800 p-4">
+          <h1 className="text-2xl font-bold text-white">AI Diagnostic Assistant</h1>
+          <p className="text-blue-100 text-sm">
+            Upload your medical reports for AI-powered insights and recommendations
+          </p>
+        </div>
 
-      {/* Tabs */}
-      <div className="flex border-b">
-        <button
-          className={`flex-1 py-3 px-4 text-center ${
-            activeTab === "upload"
+        {/* Tabs */}
+        <div className="flex border-b">
+          <button
+            className={`flex-1 py-3 px-4 text-center ${activeTab === "upload"
               ? "border-b-2 border-blue-600 text-blue-600 font-medium"
               : "text-gray-600 hover:text-blue-500"
-          }`}
-          onClick={() => setActiveTab("upload")}
-        >
-          Upload Reports
-        </button>
-        <button
-          className={`flex-1 py-3 px-4 text-center ${
-            activeTab === "results"
+              }`}
+            onClick={() => setActiveTab("upload")}
+          >
+            Upload Reports
+          </button>
+          <button
+            className={`flex-1 py-3 px-4 text-center ${activeTab === "results"
               ? "border-b-2 border-blue-600 text-blue-600 font-medium"
               : "text-gray-600 hover:text-blue-500"
-          }`}
-          onClick={() => setActiveTab("results")}
-        >
-          Results
-        </button>
-        <button
-          className={`flex-1 py-3 px-4 text-center ${
-            activeTab === "history"
+              }`}
+            onClick={() => setActiveTab("results")}
+          >
+            Results
+          </button>
+          <button
+            className={`flex-1 py-3 px-4 text-center ${activeTab === "history"
               ? "border-b-2 border-blue-600 text-blue-600 font-medium"
               : "text-gray-600 hover:text-blue-500"
-          }`}
-          onClick={() => setActiveTab("history")}
-        >
-          History
-        </button>
+              }`}
+            onClick={() => setActiveTab("history")}
+          >
+            History
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === "upload" && renderUploadTab()}
+        {activeTab === "results" && renderResultsTab()}
+        {activeTab === "history" && renderHistoryTab()}
       </div>
 
-      {/* Tab Content */}
-      {activeTab === "upload" && renderUploadTab()}
-      {activeTab === "results" && renderResultsTab()}
-      {activeTab === "history" && renderHistoryTab()}
-    </div>
-
-    {/* Information Cards */}
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-      <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-100">
-        <div className="text-blue-600 text-lg mb-2">🔍 Advanced Analysis</div>
-        <p className="text-sm text-gray-600">
-          Our AI analyzes your reports using data from millions of medical cases, providing insights that might be missed
-          in standard reviews.
-        </p>
-      </div>
-      <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-100">
-        <div className="text-blue-600 text-lg mb-2">🔒 Secure & Private</div>
-        <p className="text-sm text-gray-600">
-          Your medical data is encrypted and securely processed. We adhere to strict privacy standards and regulations.
-        </p>
-      </div>
-      <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-100">
-        <div className="text-blue-600 text-lg mb-2">👩‍⚕️ Not a Replacement</div>
-        <p className="text-sm text-gray-600">
-          Our AI provides insights to help you and your doctor make informed decisions, but does not replace professional
-          medical care.
-        </p>
-      </div>
-    </div>
-
-    {/* Disclaimer */}
-    <div className="mt-8 p-4 border border-orange-200 bg-orange-50 rounded-lg">
-      <div className="flex items-start">
-        <div className="text-orange-500 mr-3">⚠️</div>
-        <div>
-          <h3 className="font-bold text-orange-800">Medical Disclaimer</h3>
-          <p className="text-sm text-orange-700">
-            The diagnostic information provided by MediMind AI is for informational purposes only and is not a substitute
-            for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other
-            qualified health provider with any questions you may have regarding a medical condition.
+      {/* Information Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-100">
+          <div className="text-blue-600 text-lg mb-2">🔍 Advanced Analysis</div>
+          <p className="text-sm text-gray-600">
+            Our AI analyzes your reports using data from millions of medical cases, providing insights that might be missed
+            in standard reviews.
+          </p>
+        </div>
+        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-100">
+          <div className="text-blue-600 text-lg mb-2">🔒 Secure & Private</div>
+          <p className="text-sm text-gray-600">
+            Your medical data is encrypted and securely processed. We adhere to strict privacy standards and regulations.
+          </p>
+        </div>
+        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-100">
+          <div className="text-blue-600 text-lg mb-2">👩‍⚕️ Not a Replacement</div>
+          <p className="text-sm text-gray-600">
+            Our AI provides insights to help you and your doctor make informed decisions, but does not replace professional
+            medical care.
           </p>
         </div>
       </div>
-    </div>
-  </MainLayout>
-);
+
+      {/* Disclaimer */}
+      <div className="mt-8 p-4 border border-orange-200 bg-orange-50 rounded-lg">
+        <div className="flex items-start">
+          <div className="text-orange-500 mr-3">⚠️</div>
+          <div>
+            <h3 className="font-bold text-orange-800">Medical Disclaimer</h3>
+            <p className="text-sm text-orange-700">
+              The diagnostic information provided by MediMind AI is for informational purposes only and is not a substitute
+              for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other
+              qualified health provider with any questions you may have regarding a medical condition.
+            </p>
+          </div>
+        </div>
+      </div>
+    </MainLayout>
+  );
 };
 
 export default DiagnosticsPage;

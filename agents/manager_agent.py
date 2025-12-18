@@ -39,9 +39,10 @@ class AgentManager:
     Routes queries to appropriate agents and enables inter-agent communication
     """
     
-    def __init__(self, google_api_key: str, google_cse_id: str):
+    def __init__(self, google_api_key: str, google_cse_id: str, groq_api_key: str = None):
         self.google_api_key = google_api_key
         self.google_cse_id = google_cse_id
+        self.groq_api_key = groq_api_key
         
         # Initialize all agents
         logger.info("Initializing all medical agents...")
@@ -55,7 +56,8 @@ class AgentManager:
         # Initialize Search Agent
         self.search_agent = MedicalSearchAgent(
             google_api_key=google_api_key,
-            google_cse_id=google_cse_id
+            google_cse_id=google_cse_id,
+            groq_api_key=groq_api_key
         )
         
         # Initialize Hospital Operations Agent

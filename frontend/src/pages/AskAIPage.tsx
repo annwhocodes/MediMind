@@ -1,17 +1,23 @@
 import { FC, useState, useRef, useEffect } from 'react';
 import MainLayout from '../components/layout/MainLayout';
+import ReactMarkdown from 'react-markdown';
 
 interface ChatMessage {
   role: 'user' | 'ai';
   content: string;
-  sources?: string[];
+  sources?: Array<{
+    name: string;
+    type?: string;
+    url?: string;
+    description?: string;
+  } | string>;
 }
 
 const AskAIPage: FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { 
-      role: 'ai', 
-      content: 'Hello! I\'m MediMind AI. How can I assist you with your medical questions today?' 
+    {
+      role: 'ai',
+      content: 'Hello! I\'m MediMind AI. How can I assist you with your medical questions today?'
     }
   ]);
   const [input, setInput] = useState('');
@@ -22,7 +28,7 @@ const AskAIPage: FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Backend API base URL - adjust this to match your backend URL
-  const API_BASE_URL = 'http://127.0.0.1:8000';
+  const API_BASE_URL = 'http://127.0.0.1:8001';
 
   // Sample FAQs
   const faqs = [
@@ -41,7 +47,7 @@ const AskAIPage: FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  const sendMessageToBackend = async (message: string, conversationHistory: ChatMessage[]): Promise<{ response: string; sources?: string[] }> => {
+  const sendMessageToBackend = async (message: string, conversationHistory: ChatMessage[]): Promise<{ response: string; sources?: any[] }> => {
     try {
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
@@ -100,27 +106,27 @@ const AskAIPage: FC = () => {
     try {
       // Send message to backend
       const result = await sendMessageToBackend(input, messages);
-      
+
       // Add AI response
       const aiResponse: ChatMessage = {
         role: 'ai',
         content: result.response,
         sources: result.sources
       };
-      
+
       setMessages(prev => [...prev, aiResponse]);
     } catch (error) {
       console.error('Error sending message:', error);
-      
+
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
       setError(errorMessage);
-      
+
       // Add error message to chat
       const errorResponse: ChatMessage = {
         role: 'ai',
         content: `I apologize, but I encountered an error: ${errorMessage}. Please try again or contact support if the problem persists.`
       };
-      
+
       setMessages(prev => [...prev, errorResponse]);
     } finally {
       setIsLoading(false);
@@ -138,14 +144,14 @@ const AskAIPage: FC = () => {
       // You can implement file upload to your backend later
       const fileName = files[0].name;
       const fileMessage: ChatMessage = {
-        role: 'user', 
+        role: 'user',
         content: `Uploaded file: ${fileName}`
       };
       const aiResponse: ChatMessage = {
-        role: 'ai', 
+        role: 'ai',
         content: `I've received your file "${fileName}". Currently, file analysis is handled through the diagnostic endpoint. For now, please describe what specific questions you have about this medical report, and I'll do my best to provide general guidance.`
       };
-      
+
       setMessages(prev => [...prev, fileMessage, aiResponse]);
       setShowFaqs(false);
     }
@@ -158,17 +164,44 @@ const AskAIPage: FC = () => {
   const renderMessageContent = (message: ChatMessage) => {
     return (
       <div>
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        <div className="prose prose-sm max-w-none dark:prose-invert">
+          <ReactMarkdown
+            components={{
+              h1: ({ node, ...props }: any) => <h1 className="text-xl font-bold my-2 text-blue-800" {...props} />,
+              h2: ({ node, ...props }: any) => <h2 className="text-lg font-bold my-2 text-blue-700" {...props} />,
+              h3: ({ node, ...props }: any) => <h3 className="text-md font-semibold my-1 text-blue-600" {...props} />,
+              ul: ({ node, ...props }: any) => <ul className="list-disc list-inside my-2 space-y-1" {...props} />,
+              li: ({ node, ...props }: any) => <li className="text-gray-800" {...props} />,
+              strong: ({ node, ...props }: any) => <strong className="font-semibold text-gray-900" {...props} />,
+              p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
+        </div>
+
         {message.sources && message.sources.length > 0 && (
           <div className="mt-3 pt-3 border-t border-gray-200">
             <p className="text-xs font-medium text-gray-600 mb-2">Sources:</p>
             <ul className="text-xs text-gray-500 space-y-1">
-              {message.sources.map((source, index) => (
-                <li key={index} className="flex items-start">
-                  <span className="mr-2">•</span>
-                  <span>{source}</span>
-                </li>
-              ))}
+              {message.sources.map((source, index) => {
+                const isString = typeof source === 'string';
+                const sourceName = isString ? source : source.name;
+                const sourceUrl = isString ? (source.includes('http') ? source : undefined) : source.url;
+
+                return (
+                  <li key={index} className="flex items-start">
+                    <span className="mr-2">•</span>
+                    {sourceUrl ? (
+                      <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                        {sourceName}
+                      </a>
+                    ) : (
+                      <span>{sourceName}</span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
@@ -208,8 +241,8 @@ const AskAIPage: FC = () => {
             >
               <div
                 className={`max-w-[80%] p-3 rounded-lg ${message.role === 'user'
-                    ? 'bg-blue-600 text-white rounded-tr-none'
-                    : 'bg-white text-gray-800 shadow rounded-tl-none border border-gray-200'
+                  ? 'bg-blue-600 text-white rounded-tr-none'
+                  : 'bg-white text-gray-800 shadow rounded-tl-none border border-gray-200'
                   }`}
               >
                 {renderMessageContent(message)}
@@ -275,14 +308,13 @@ const AskAIPage: FC = () => {
               onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSendMessage()}
               placeholder="Ask a medical question or upload your report..."
               className="flex-grow p-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={isLoading}
             />
             <button
               onClick={handleSendMessage}
               disabled={!input.trim() || isLoading}
               className={`p-2 px-4 rounded-r-md transition-colors ${input.trim() && !isLoading
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
             >
               {isLoading ? 'Sending...' : 'Send'}

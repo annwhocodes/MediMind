@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import MainLayout from '../components/layout/MainLayout';
 
 type Patient = {
+  patient_id?: string;  // Database ID
   name: string;
   age: number;
   gender: string;
@@ -27,6 +28,13 @@ type Patient = {
   };
   diagnosis: string;
   department: string;
+  // AI Diagnosis from backend
+  ai_diagnosis?: {
+    primary_diagnosis?: string;
+    confidence_score?: number;
+    severity?: string;
+    created_at?: string;
+  };
 };
 
 type CsvPatientRow = {
@@ -207,15 +215,15 @@ const HospitalManagementAgent = () => {
       const matchesStatus = filters.status === 'all' || patient.status === filters.status;
       const matchesBedType = filters.bedType === 'all' || patient.bedType === filters.bedType;
       const matchesGender = filters.gender === 'all' || patient.gender === filters.gender;
-      
-      const matchesSearch = filters.searchTerm === '' || 
+
+      const matchesSearch = filters.searchTerm === '' ||
         patient.name.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
         patient.bedNumber.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
         patient.symptoms.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
         patient.diagnosis.toLowerCase().includes(filters.searchTerm.toLowerCase());
 
-      return matchesPriority && matchesDepartment && matchesStatus && 
-             matchesBedType && matchesGender && matchesSearch;
+      return matchesPriority && matchesDepartment && matchesStatus &&
+        matchesBedType && matchesGender && matchesSearch;
     });
   }, [csvData, filters]);
 
@@ -230,6 +238,50 @@ const HospitalManagementAgent = () => {
       searchTerm: ''
     });
   };
+
+  // Load patients from database on page load
+  useEffect(() => {
+    const loadPatientsFromDatabase = async () => {
+      try {
+        console.log('Loading patients from database...');
+        const response = await fetch('http://localhost:8001/patients');
+        const data = await response.json();
+
+        if (data.success && data.patients && data.patients.length > 0) {
+          // Convert database format to frontend format
+          const frontendPatients: Patient[] = data.patients.map((p: any) => ({
+            patient_id: p.patient_id,
+            name: p.name || 'Unknown',
+            age: p.age || 0,
+            gender: p.gender || 'Not specified',
+            bedNumber: p.bed_number || 'N/A',
+            bedType: (p.bed_type || 'general') as Patient['bedType'],
+            status: (p.status === 'Active' ? 'inpatient' : 'outpatient') as Patient['status'],
+            priority: (p.priority || 'normal') as Patient['priority'],
+            admissionDate: p.admission_date || new Date().toISOString().slice(0, 10),
+            symptoms: p.symptoms || '',
+            medicalHistory: p.medical_history || '',
+            vitals: p.vitals || { temperature: 37, heartRate: 72, bloodPressure: '120/80' },
+            diagnosis: p.diagnosis || 'Pending diagnosis',
+            department: p.department || 'General',
+            ai_diagnosis: p.ai_diagnosis
+          }));
+
+          setCsvData(frontendPatients);
+          console.log(`✅ Loaded ${frontendPatients.length} patients from database`);
+        } else {
+          console.log('No patients in database, showing sample data');
+          // setCsvData(sampleData); // Keep existing data
+        }
+      } catch (error) {
+        console.error('Error loading patients from database:', error);
+        console.log('Showing sample data instead');
+        // setCsvData(sampleData); // Keep existing data
+      }
+    };
+
+    loadPatientsFromDatabase();
+  }, []);
 
   // NEW: Count active filters
   const activeFiltersCount = useMemo(() => {
@@ -247,57 +299,70 @@ const HospitalManagementAgent = () => {
   const validStatuses = ['inpatient', 'outpatient'] as const;
   const validPriorities = ['normal', 'urgent', 'critical'] as const;
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type === 'text/csv') {
-      Papa.parse<CsvPatientRow>(file, {
-        header: true,
-        skipEmptyLines: true,
-        dynamicTyping: true,
-        delimitersToGuess: [',', '\t', '|', ';'],
-        complete: (result: Papa.ParseResult<CsvPatientRow>) => {
-          const processedData: Patient[] = result.data
-            .filter((row: CsvPatientRow) => row.name && row.name.trim() !== '')
-            .map((row: CsvPatientRow): Patient => {
-              const bedNumber = row.bedNumber || row.bed_number || 'N/A';
-              
-              return {
-                name: row.name.trim(),
-                age: parseInt(String(row.age)) || 0,
-                gender: row.gender || 'Not specified',
-                bedNumber: bedNumber,
-                bedType: validBedTypes.includes(row.bedType as any) || validBedTypes.includes(row.bed_type as any)
-                  ? ((row.bedType || row.bed_type) as Patient['bedType'])
-                  : 'general',
-                status: validStatuses.includes(row.status as any)
-                  ? (row.status as Patient['status'])
-                  : 'inpatient',
-                priority: validPriorities.includes(row.priority as any)
-                  ? (row.priority as Patient['priority'])
-                  : 'normal',
-                admissionDate: row.admissionDate || row.admission_date || new Date().toISOString().slice(0, 10),
-                symptoms: row.symptoms || '',
-                medicalHistory: row.medicalHistory || row.medical_history || '',
-                vitals: row.vitals
-                  ? (typeof row.vitals === 'string' ? JSON.parse(row.vitals) : row.vitals)
-                  : { temperature: 37, heartRate: 72, bloodPressure: '120/80' },
-                diagnosis: row.diagnosis || 'Pending diagnosis',
-                department: row.department || 'General'
-              };
-            });
+    if (!file) return;
 
-          setCsvData(processedData);
-          console.log(`Loaded ${processedData.length} patients from CSV`);
-        },
-        error: (error) => {
-          console.error('CSV parsing error:', error);
-          alert('Error parsing CSV file. Please check the format.');
-        }
-      });
-    } else {
+    if (file.type !== 'text/csv') {
       alert('Please select a valid CSV file.');
+      return;
+    }
+
+    try {
+      // Upload CSV to database endpoint
+      const formData = new FormData();
+      formData.append('file', file);
+
+      console.log('Uploading CSV to database...');
+
+      const response = await fetch('http://localhost:8001/hospital/upload-csv', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to upload CSV');
+      }
+
+      const result = await response.json();
+      console.log('✅ CSV uploaded successfully:', result);
+      alert(`✅ Successfully imported ${result.patients_saved} patients to database!`);
+
+      // Fetch updated patient list from database
+      const patientsResponse = await fetch('http://localhost:8001/patients');
+      const patientsData = await patientsResponse.json();
+
+      if (patientsData.success && patientsData.patients) {
+        // Convert database format to frontend format
+        const frontendPatients: Patient[] = patientsData.patients.map((p: any) => ({
+          patient_id: p.patient_id || 'N/A',
+          name: p.name || 'Unknown',
+          age: p.age || 0,
+          gender: p.gender || 'Not specified',
+          bedNumber: p.bed_number || 'N/A',
+          bedType: (p.bed_type || 'general') as Patient['bedType'],
+          status: (p.status === 'Active' ? 'inpatient' : 'outpatient') as Patient['status'],
+          priority: (p.priority || 'normal') as Patient['priority'],
+          admissionDate: p.admission_date || new Date().toISOString().slice(0, 10),
+          symptoms: p.symptoms || '',
+          medicalHistory: p.medical_history || '',
+          vitals: p.vitals || { temperature: 37, heartRate: 72, bloodPressure: '120/80' },
+          diagnosis: p.diagnosis || 'Pending diagnosis',
+          department: p.department || 'General',
+          ai_diagnosis: p.ai_diagnosis
+        }));
+
+        setCsvData(frontendPatients);
+        console.log(`Loaded ${frontendPatients.length} patients from database`);
+      }
+
+    } catch (error) {
+      console.error('CSV upload error:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Failed to upload CSV'}`);
     }
   };
+
 
   const addCustomPatient = () => {
     if (customPatient.name.trim()) {
@@ -305,7 +370,7 @@ const HospitalManagementAgent = () => {
         const floors = ['A', 'B', 'C', 'D'];
         const existingBeds = csvData.map(p => p.bedNumber).filter(bed => bed !== 'N/A');
         let bedNumber = '';
-        
+
         for (let floor of floors) {
           for (let room = 101; room <= 399; room++) {
             bedNumber = `${floor}${room}`;
@@ -314,7 +379,7 @@ const HospitalManagementAgent = () => {
             }
           }
         }
-        
+
         return `TEMP${Date.now()}`;
       };
 
@@ -371,17 +436,17 @@ const HospitalManagementAgent = () => {
       if (patient.status === 'outpatient') acc.outpatients++;
       if (patient.priority === 'critical') acc.critical++;
       if (patient.priority === 'urgent') acc.urgent++;
-      
+
       if (patient.status === 'inpatient' && patient.bedNumber !== 'N/A') {
         acc.occupiedBeds++;
       }
-      
+
       return acc;
-    }, { 
-      total: 0, 
-      inpatients: 0, 
-      outpatients: 0, 
-      critical: 0, 
+    }, {
+      total: 0,
+      inpatients: 0,
+      outpatients: 0,
+      critical: 0,
       urgent: 0,
       occupiedBeds: 0
     });
@@ -495,19 +560,17 @@ const HospitalManagementAgent = () => {
 
   const PatientCard: FC<PatientCardProps> = ({ patient, onClick }) => (
     <div
-      className={`bg-white rounded-lg shadow-md p-4 cursor-pointer hover:shadow-lg transition-shadow border-l-4 ${
-        patient.priority === 'critical' ? 'border-red-500' :
+      className={`bg-white rounded-lg shadow-md p-4 cursor-pointer hover:shadow-lg transition-shadow border-l-4 ${patient.priority === 'critical' ? 'border-red-500' :
         patient.priority === 'urgent' ? 'border-yellow-500' : 'border-green-500'
-      }`}
+        }`}
       onClick={() => onClick(patient)}
     >
       <div className="flex justify-between items-start mb-2">
         <h3 className="font-semibold text-lg text-gray-800">{patient.name}</h3>
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-          patient.priority === 'critical' ? 'bg-red-100 text-red-800' :
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${patient.priority === 'critical' ? 'bg-red-100 text-red-800' :
           patient.priority === 'urgent' ? 'bg-yellow-100 text-yellow-800' :
-          'bg-green-100 text-green-800'
-        }`}>
+            'bg-green-100 text-green-800'
+          }`}>
           {patient.priority}
         </span>
       </div>
@@ -517,82 +580,263 @@ const HospitalManagementAgent = () => {
         <p><strong>Department:</strong> {patient.department || 'General'}</p>
         <p className="text-xs mt-2 line-clamp-2">{patient.symptoms}</p>
       </div>
+
+      {/* AI Diagnosis Summary */}
+      {patient.ai_diagnosis?.primary_diagnosis && (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-purple-700 flex items-center">
+              <Activity className="w-3 h-3 mr-1" />
+              AI Diagnosis
+            </span>
+            {patient.ai_diagnosis.confidence_score && (
+              <span className={`text-xs font-medium px-2 py-0.5 rounded ${patient.ai_diagnosis.confidence_score >= 0.8 ? 'bg-green-100 text-green-700' :
+                patient.ai_diagnosis.confidence_score >= 0.6 ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-orange-100 text-orange-700'
+                }`}>
+                {Math.round(patient.ai_diagnosis.confidence_score * 100)}% confident
+              </span>
+            )}
+          </div>
+          <p className="text-sm font-medium text-gray-800">{patient.ai_diagnosis.primary_diagnosis}</p>
+          {patient.ai_diagnosis.created_at && (
+            <p className="text-xs text-gray-500 mt-1">
+              Analyzed: {new Date(patient.ai_diagnosis.created_at).toLocaleDateString()}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 
-  const PatientModal: FC<PatientModalProps> = ({ patient, onClose }) => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-800">{patient.name} - Medical Profile</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 text-xl font-bold"
-            >
-              ×
-            </button>
-          </div>
+  const PatientModal: FC<PatientModalProps> = ({ patient, onClose }) => {
+    const [isRunningDiagnosis, setIsRunningDiagnosis] = useState(false);
+    const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
+    const [diagnosisError, setDiagnosisError] = useState<string | null>(null);
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-blue-800 mb-2">Patient Information</h3>
-                <div className="space-y-2 text-sm">
-                  <p><strong>Age:</strong> {patient.age}</p>
-                  <p><strong>Gender:</strong> {patient.gender}</p>
-                  <p><strong>Bed Number:</strong> {patient.bedNumber || 'N/A'}</p>
-                  <p><strong>Status:</strong> {patient.status}</p>
-                  <p><strong>Priority:</strong> <span className={`font-medium ${
-                    patient.priority === 'critical' ? 'text-red-600' :
-                    patient.priority === 'urgent' ? 'text-yellow-600' :
-                    'text-green-600'
-                  }`}>{patient.priority}</span></p>
-                  <p><strong>Department:</strong> {patient.department}</p>
-                  <p><strong>Admission Date:</strong> {patient.admissionDate}</p>
+    const handleRunDiagnosis = async () => {
+      console.log('🔘 Diagnosis button clicked!');
+      console.log('📋 Patient data:', {
+        name: patient.name,
+        patient_id: patient.patient_id,
+        hasPatientId: !!patient.patient_id
+      });
+
+      setIsRunningDiagnosis(true);
+      setDiagnosisError(null);
+      setDiagnosisResult(null);
+
+      try {
+        // Check if patient has database ID
+        if (!patient.patient_id) {
+          const errorMsg = 'Patient must be saved to database first. Please upload CSV to save patients.';
+          console.error('❌ No patient_id found!', errorMsg);
+          throw new Error(errorMsg);
+        }
+
+        console.log(`🚀 Running diagnosis for patient: ${patient.patient_id}`);
+
+        const url = `http://localhost:8001/patients/${patient.patient_id}/diagnose`;
+        console.log(`📡 Calling: ${url}`);
+
+        // Call database endpoint for diagnosis
+        const response = await fetch(url, {
+          method: 'POST'
+        });
+
+        console.log(`📥 Response status: ${response.status}`);
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to run diagnosis');
+        }
+
+        const result = await response.json();
+        console.log('✅ Diagnosis completed:', result);
+        setDiagnosisResult(result);
+
+      } catch (error) {
+        console.error('❌ Diagnosis error:', error);
+        setDiagnosisError(error instanceof Error ? error.message : 'Failed to run diagnosis');
+      } finally {
+        setIsRunningDiagnosis(false);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">{patient.name} - Medical Profile</h2>
+              <button
+                onClick={onClose}
+                className="text-gray-500 hover:text-gray-700 text-xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-blue-800 mb-2">Patient Information</h3>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Age:</strong> {patient.age}</p>
+                    <p><strong>Gender:</strong> {patient.gender}</p>
+                    <p><strong>Bed Number:</strong> {patient.bedNumber || 'N/A'}</p>
+                    <p><strong>Status:</strong> {patient.status}</p>
+                    <p><strong>Priority:</strong> <span className={`font-medium ${patient.priority === 'critical' ? 'text-red-600' :
+                      patient.priority === 'urgent' ? 'text-yellow-600' :
+                        'text-green-600'
+                      }`}>{patient.priority}</span></p>
+                    <p><strong>Department:</strong> {patient.department}</p>
+                    <p><strong>Admission Date:</strong> {patient.admissionDate}</p>
+                  </div>
+                </div>
+
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-green-800 mb-2 flex items-center">
+                    <Heart className="w-4 h-4 mr-2" />
+                    Vital Signs
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Temperature:</strong> {patient.vitals?.temperature}°C</p>
+                    <p><strong>Heart Rate:</strong> {patient.vitals?.heartRate} bpm</p>
+                    <p><strong>Blood Pressure:</strong> {patient.vitals?.bloodPressure}</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-green-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-green-800 mb-2 flex items-center">
-                  <Heart className="w-4 h-4 mr-2" />
-                  Vital Signs
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <p><strong>Temperature:</strong> {patient.vitals?.temperature}°C</p>
-                  <p><strong>Heart Rate:</strong> {patient.vitals?.heartRate} bpm</p>
-                  <p><strong>Blood Pressure:</strong> {patient.vitals?.bloodPressure}</p>
+              <div className="space-y-4">
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-yellow-800 mb-2">Symptoms</h3>
+                  <p className="text-sm">{patient.symptoms}</p>
+                </div>
+
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-purple-800 mb-2">Medical History</h3>
+                  <p className="text-sm">{patient.medicalHistory}</p>
+                </div>
+
+                <div className="bg-red-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-red-800 mb-2 flex items-center">
+                    <Activity className="w-4 h-4 mr-2" />
+                    AI Diagnosis
+                  </h3>
+                  <p className="text-sm mb-3">{patient.diagnosis}</p>
+
+                  <button
+                    onClick={handleRunDiagnosis}
+                    disabled={isRunningDiagnosis}
+                    className="w-full bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    {isRunningDiagnosis ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Running Analysis...
+                      </>
+                    ) : (
+                      'Run Full Diagnostic Analysis'
+                    )}
+                  </button>
+
+                  {diagnosisError && (
+                    <div className="mt-3 p-2 bg-red-100 border border-red-300 rounded text-sm text-red-700">
+                      Error: {diagnosisError}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="bg-yellow-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-yellow-800 mb-2">Symptoms</h3>
-                <p className="text-sm">{patient.symptoms}</p>
-              </div>
-
-              <div className="bg-purple-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-purple-800 mb-2">Medical History</h3>
-                <p className="text-sm">{patient.medicalHistory}</p>
-              </div>
-
-              <div className="bg-red-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-red-800 mb-2 flex items-center">
-                  <Activity className="w-4 h-4 mr-2" />
-                  AI Diagnosis
+            {/* Diagnosis Results Section */}
+            {diagnosisResult && (
+              <div className="mt-6 border-t pt-6">
+                <h3 className="text-xl font-bold text-gray-800 mb-4">
+                  🔬 AI Diagnostic Analysis Results
                 </h3>
-                <p className="text-sm">{patient.diagnosis}</p>
-                <button className="mt-2 bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition-colors">
-                  Run Full Diagnostic Analysis
-                </button>
+
+                <div className="space-y-4">
+                  {/* Primary Diagnosis */}
+                  <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                    <h4 className="font-semibold text-blue-800 mb-2">Primary Diagnosis</h4>
+                    <p className="text-sm">{diagnosisResult.primary_diagnosis}</p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Confidence: {Math.round(diagnosisResult.confidence_score * 100)}%
+                    </p>
+                  </div>
+
+                  {/* Findings */}
+                  {diagnosisResult.findings && diagnosisResult.findings.length > 0 && (
+                    <div className="bg-gray-50 p-4 rounded">
+                      <h4 className="font-semibold text-gray-800 mb-2">Key Findings</h4>
+                      <ul className="space-y-1 text-sm">
+                        {diagnosisResult.findings.map((finding: string, idx: number) => (
+                          <li key={idx} className="flex items-start">
+                            <span className="text-blue-500 mr-2">•</span>
+                            <span>{finding}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Differential Diagnoses */}
+                  {diagnosisResult.differential_diagnoses && diagnosisResult.differential_diagnoses.length > 0 && (
+                    <div className="bg-yellow-50 p-4 rounded">
+                      <h4 className="font-semibold text-yellow-800 mb-2">Differential Diagnoses</h4>
+                      <div className="space-y-2">
+                        {diagnosisResult.differential_diagnoses.map((diff: any, idx: number) => (
+                          <div key={idx} className="text-sm">
+                            <div className="flex justify-between">
+                              <span className="font-medium">{diff.diagnosis}</span>
+                              <span className="text-yellow-600">{Math.round(diff.probability * 100)}%</span>
+                            </div>
+                            <p className="text-xs text-gray-600 ml-2">{diff.reasoning}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recommendations */}
+                  {diagnosisResult.recommendations && diagnosisResult.recommendations.length > 0 && (
+                    <div className="bg-green-50 p-4 rounded">
+                      <h4 className="font-semibold text-green-800 mb-2">Recommendations</h4>
+                      <ul className="space-y-1 text-sm">
+                        {diagnosisResult.recommendations.map((rec: string, idx: number) => (
+                          <li key={idx} className="flex items-start">
+                            <span className="text-green-500 mr-2">✓</span>
+                            <span>{rec}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Emergency Indicators */}
+                  {diagnosisResult.emergency_indicators && diagnosisResult.emergency_indicators.length > 0 && (
+                    <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                      <h4 className="font-semibold text-red-800 mb-2 flex items-center">
+                        <span className="mr-2">⚠️</span>
+                        Emergency Indicators
+                      </h4>
+                      <ul className="space-y-1 text-sm text-red-700">
+                        {diagnosisResult.emergency_indicators.map((indicator: string, idx: number) => (
+                          <li key={idx}>{indicator}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <MainLayout>
@@ -636,11 +880,10 @@ const HospitalManagementAgent = () => {
                 <button
                   key={view}
                   onClick={() => setActiveView(view)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    activeView === view
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeView === view
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                    }`}
                 >
                   {view.charAt(0).toUpperCase() + view.slice(1)}
                 </button>
@@ -768,9 +1011,8 @@ const HospitalManagementAgent = () => {
                     )}
                     <button
                       onClick={() => setShowFilters(!showFilters)}
-                      className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
-                        showFilters ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+                      className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${showFilters ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
                     >
                       <Filter className="w-4 h-4" />
                       <span>Filters</span>
@@ -891,7 +1133,7 @@ const HospitalManagementAgent = () => {
             </div>
           )}
 
-{/* Analytics View - Complete with all charts */}
+          {/* Analytics View - Complete with all charts */}
           {activeView === 'analytics' && (
             <div className="space-y-6">
               {/* First Row - Original Priority and Department Charts */}
@@ -1009,7 +1251,7 @@ const HospitalManagementAgent = () => {
                       <AlertTriangle className="w-8 h-8 text-red-500" />
                     </div>
                   </div>
-                  
+
                   <div className="bg-yellow-50 p-4 rounded-lg border-l-4 border-yellow-500">
                     <div className="flex items-center justify-between">
                       <div>
@@ -1021,7 +1263,7 @@ const HospitalManagementAgent = () => {
                       <Calendar className="w-8 h-8 text-yellow-500" />
                     </div>
                   </div>
-                  
+
                   <div className="bg-green-50 p-4 rounded-lg border-l-4 border-green-500">
                     <div className="flex items-center justify-between">
                       <div>
