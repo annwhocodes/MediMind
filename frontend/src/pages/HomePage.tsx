@@ -7,7 +7,7 @@ const HomePage: FC = () => {
 
   return (
     <MainLayout>
-      
+
       {/* Contact Us */}
       <section className="mt-10 bg-white p-6 rounded shadow">
         <div className="text-blue-600 font-bold text-lg">📞 Contact Us -</div>
@@ -15,7 +15,7 @@ const HomePage: FC = () => {
           You can contact us using the following number:
         </p>
         <p className="text-xl font-semibold text-gray-900 mt-2">
-          +91-9876543210
+          +91-9324036973
         </p>
       </section>
     </MainLayout>
