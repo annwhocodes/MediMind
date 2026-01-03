@@ -78,6 +78,17 @@ def init_db():
                 upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        # Create users table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         
         conn.commit()
         logger.info(f"Database initialized at {DB_FILE}")
@@ -276,6 +287,75 @@ def get_latest_diagnosis(patient_id):
         return None
     except Exception as e:
         logger.error(f"Error getting diagnosis: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_patient_diagnosis_history(patient_id):
+    """Retrieve full diagnosis history for a patient"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM diagnosis_results 
+            WHERE patient_id = ? 
+            ORDER BY created_at DESC
+        ''', (patient_id,))
+        rows = cursor.fetchall()
+        
+        history = []
+        for row in rows:
+            d = dict(row)
+            # Parse JSON fields
+            for key in ['findings', 'differential_diagnoses', 'recommendations', 'medications', 'emergency_indicators']:
+                json_key = f"{key}_json"
+                if d.get(json_key):
+                    try:
+                        d[key] = json.loads(d[json_key])
+                    except:
+                        d[key] = []
+            history.append(d)
+        return history
+    except Exception as e:
+        logger.error(f"Error getting diagnosis history: {e}")
+        return []
+    finally:
+        conn.close()
+
+
+
+def create_user(username, password_hash, role='user'):
+    """Create a new user"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+            (username, password_hash, role)
+        )
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        logger.warning(f"User {username} already exists")
+        return False
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_user_by_username(username):
+    """Retrieve user by username"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
+    except Exception as e:
+        logger.error(f"Error getting user {username}: {e}")
         return None
     finally:
         conn.close()

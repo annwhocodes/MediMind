@@ -24,8 +24,19 @@ from pathlib import Path
 import uvicorn
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from dataclasses import asdict, is_dataclass
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import Depends
+
+# Import auth utils
+try:
+    from auth_utils import verify_password, get_password_hash, create_access_token, decode_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+except ImportError:
+    # Handle relative import if needed
+    sys.path.append(str(Path(__file__).parent))
+    from auth_utils import verify_password, get_password_hash, create_access_token, decode_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+
 
 # Configure logging EARLY
 logging.basicConfig(level=logging.INFO)
@@ -90,7 +101,7 @@ except ImportError as e:
     import_errors['hospital_operations_agent'] = str(e)
 
 try:
-    from manager_agent import AgentManager
+    from manager_agent import AgentManager, UserQuery
     logger.info("✓ Successfully imported from manager_agent")
 except ImportError as e:
     logger.error(f"✗ Failed to import from manager_agent: {e}")
@@ -194,6 +205,67 @@ def cleanup_temp_files(file_paths: List[str]):
         except Exception as e:
             logger.warning(f"Failed to delete temp file {path}: {e}")
 
+# ==================== AUTHENTICATION ====================
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+class UserRegister(BaseModel):
+    username: str
+    password: str
+    role: str = "user" # 'user' or 'admin'
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    role: str
+    username: str
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    payload = decode_access_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    username: str = payload.get("sub")
+    role: str = payload.get("role")
+    if username is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return {"username": username, "role": role}
+
+async def get_current_admin(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized (Admin only)")
+    return current_user
+
+@app.post("/auth/register", status_code=status.HTTP_201_CREATED)
+async def register(user: UserRegister):
+    if db.get_user_by_username(user.username):
+        raise HTTPException(status_code=400, detail="Username already registered")
+    
+    hashed_password = get_password_hash(user.password)
+    if db.create_user(user.username, hashed_password, user.role):
+        return {"message": "User created successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create user")
+
+@app.post("/auth/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = db.get_user_by_username(form_data.username)
+    if not user or not verify_password(form_data.password, user['password_hash']):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user['username'], "role": user['role']}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer", "role": user['role'], "username": user['username']}
+
 # ==================== PATIENT DATABASE ENDPOINTS ====================
 
 @app.post("/patients", status_code=status.HTTP_201_CREATED)
@@ -209,7 +281,8 @@ async def create_patient(
     priority: str = Form("normal"),
     status: str = Form("Active"),
     admission_date: str = Form(None),
-    patient_id: str = Form(None)
+    patient_id: str = Form(None),
+    current_user: dict = Depends(get_current_admin)
 ):
     """Create a new patient record"""
     if db is None:
@@ -248,7 +321,7 @@ async def create_patient(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/patients")
-async def get_all_patients():
+async def get_all_patients(current_user: dict = Depends(get_current_admin)):
     """Get all patient records with their latest AI diagnosis"""
     if db is None:
         raise HTTPException(status_code=500, detail="Database module not available")
@@ -302,7 +375,7 @@ async def get_patient(patient_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/patients/{patient_id}")
-async def delete_patient(patient_id: str):
+async def delete_patient(patient_id: str, current_user: dict = Depends(get_current_admin)):
     """Delete a patient record"""
     if db is None:
         raise HTTPException(status_code=500, detail="Database module not available")
@@ -398,40 +471,32 @@ async def diagnose_patient(patient_id: str):
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
             
-        if not diagnostic_agent:
-            raise HTTPException(status_code=503, detail="Diagnostic agent not initialized")
+        if not agent_manager:
+            raise HTTPException(status_code=503, detail="Agent Manager not initialized")
             
-        # Create diagnostic input
-        diagnostic_input = DiagnosticInput(
-            symptoms=[s.strip() for s in patient.get('symptoms', '').split(',') if s.strip()],
-            medical_history=patient.get('medical_history', ''),
-            uploaded_reports=[],  # Can be extended
-            age=int(patient.get('age')) if patient.get('age') else None,
-            gender=patient.get('gender'),
-            vital_signs=patient.get('vitals')
+        # Create UserQuery for AgentManager
+        # This allows us to leverage the manager's history fetching logic
+        symptoms_str = patient.get('symptoms', '')
+        medical_history = patient.get('medical_history', '')
+        
+        user_query = UserQuery(
+            query_type='diagnosis',
+            content=symptoms_str, # Pass symptoms as content string
+            user_context={
+                'patient_id': patient_id, # CRITICAL: This triggers history fetching in manager
+                'medical_history': medical_history,
+                'age': int(patient.get('age')) if patient.get('age') else None,
+                'gender': patient.get('gender'),
+                'vital_signs': patient.get('vitals')
+            },
+            files=[]
         )
         
-        # Run diagnosis
-        logger.info(f"Running diagnosis for patient: {patient_id}")
-        result = await diagnostic_agent.diagnose(diagnostic_input)
+        # Run diagnosis via Manager
+        logger.info(f"Running diagnosis for patient: {patient_id} via AgentManager")
+        response = await agent_manager.process_query(user_query)
         
-        # Convert diagnosis result to dictionary
-        if isinstance(result, dict):
-            diagnosis_data = result
-        elif is_dataclass(result):
-            # Convert dataclass to dict
-            diagnosis_data = asdict(result)
-        elif hasattr(result, 'to_dict'):
-            diagnosis_data = result.to_dict()
-        else:
-            # Fallback: try to extract attributes
-            diagnosis_data = {}
-            for attr in ['primary_diagnosis', 'confidence_score', 'findings', 
-                        'differential_diagnoses', 'recommendations', 
-                        'emergency_indicators', 'medications', 'follow_up',
-                        'sources', 'search_context']:
-                if hasattr(result, attr):
-                    diagnosis_data[attr] = getattr(result, attr)
+        diagnosis_data = response.response_data
         
         logger.info(f"Diagnosis data keys: {list(diagnosis_data.keys())}")
         
@@ -450,7 +515,7 @@ async def diagnose_patient(patient_id: str):
 # ==================== CSV UPLOAD ENDPOINT ====================
 
 @app.post("/hospital/upload-csv")
-async def upload_hospital_csv(file: UploadFile = File(...)):
+async def upload_hospital_csv(file: UploadFile = File(...), current_user: dict = Depends(get_current_admin)):
     """Upload and process hospital patient CSV using Hospital Operations Agent"""
     if hospital_operations_agent is None:
         raise HTTPException(status_code=503, detail="Hospital Operations Agent not available")
@@ -547,42 +612,65 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     conversation_history: List[ChatMessage] = []
+    patient_id: Optional[str] = None # Added for user personalization
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    """Chat endpoint for Ask AI page - uses search agent"""
+    """Chat endpoint using AgentManager for integrated/personalized responses"""
     try:
-        if search_agent is None:
-            raise HTTPException(
+        if agent_manager is None:
+             raise HTTPException(
                 status_code=503,
-                detail="Medical AI service is currently unavailable. Please try again later."
+                detail="Medical AI service unavailable"
             )
         
-        logger.info(f"Chat request: {request.message[:100]}...")
+        logger.info(f"Chat request: {request.message[:100]}... (User: {request.patient_id})")
         
-        # Use search agent to get response
+        # Prepare context
+        user_context = {
+            "conversation_history": [msg.dict() for msg in request.conversation_history],
+            "patient_id": request.patient_id # Manager will fetch history using this
+        }
+        
+        # Use AgentManager to process query
+        # This automatically routes to search BUT with patient history context if available
+        user_query = UserQuery(
+            query_type='search', # Default to search for chat, but Manager handles it
+            content=request.message,
+            user_context=user_context
+        )
+        
         try:
-            # Use search method which is present in MedicalSearchAgent (Ollama version)
-            # Pass conversation history in diagnostic_context
-            result = await search_agent.search(
-                query=request.message,
-                diagnostic_context={
-                    "conversation_history": [msg.dict() for msg in request.conversation_history],
-                    "symptoms": [], # Default empty
-                    "medical_history": "" # Default empty
-                }
-            )
+            # Route through Manager (unifies logic)
+            response = await agent_manager.process_query(user_query)
             
-            # Key 'diagnostic_response' is used in the new agent, 'response' as fallback
-            response_text = result.get('diagnostic_response', result.get('response', 'I apologize, but I could not generate a response. Please try again.'))
-            sources = result.get('sources', [])
+            # Extract response text
+            # Depending on agent type, data structure varies slightly in our unified response
+            if isinstance(response.response_data, dict):
+                 # Search/Diag results usually here
+                 if 'diagnostic_response' in response.response_data:
+                     response_text = response.response_data['diagnostic_response']
+                 elif 'response' in response.response_data:
+                     response_text = response.response_data['response']
+                 elif 'search_results' in response.response_data:
+                     # fallback content
+                     response_text = response.response_data.get('message', '') + "\n" + str(response.response_data.get('search_results', ''))
+                 else:
+                     # Flatten/dump provided data if no standard key
+                     response_text = str(response.response_data)
+            else:
+                response_text = str(response.response_data)
+                
+            sources = response.sources or []
             
-            logger.info(f"Chat response generated ({len(response_text)} chars)")
+            logger.info(f"Chat response generated via Manager ({len(response_text)} chars)")
             
             return {
                 "response": response_text,
                 "sources": sources
             }
+            
+
             
         except Exception as e:
             logger.error(f"Search agent error: {e}")
