@@ -244,7 +244,22 @@ const HospitalManagementAgent = () => {
     const loadPatientsFromDatabase = async () => {
       try {
         console.log('Loading patients from database...');
-        const response = await fetch('http://localhost:8001/patients');
+        // Use axios which has headers set by AuthContext, or fetch with manual headers
+        const token = localStorage.getItem('token');
+        const response = await fetch('http://localhost:8001/patients', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            console.warn("Unauthorized access to patients list");
+            // Optional: redirect to login if not handled by interceptor
+          }
+          throw new Error(`Failed to fetch patients: ${response.status}`);
+        }
+
         const data = await response.json();
 
         if (data.success && data.patients && data.patients.length > 0) {
@@ -315,8 +330,12 @@ const HospitalManagementAgent = () => {
 
       console.log('Uploading CSV to database...');
 
+      const token = localStorage.getItem('token');
       const response = await fetch('http://localhost:8001/hospital/upload-csv', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: formData
       });
 
@@ -330,7 +349,11 @@ const HospitalManagementAgent = () => {
       alert(`✅ Successfully imported ${result.patients_saved} patients to database!`);
 
       // Fetch updated patient list from database
-      const patientsResponse = await fetch('http://localhost:8001/patients');
+      const patientsResponse = await fetch('http://localhost:8001/patients', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const patientsData = await patientsResponse.json();
 
       if (patientsData.success && patientsData.patients) {
@@ -609,6 +632,11 @@ const HospitalManagementAgent = () => {
     </div>
   );
 
+  // Helper to remove markdown artifacts
+  const cleanText = (text: string) => {
+    return text ? text.replace(/\*\*/g, "").replace(/##/g, "").trim() : "";
+  };
+
   const PatientModal: FC<PatientModalProps> = ({ patient, onClose }) => {
     const [isRunningDiagnosis, setIsRunningDiagnosis] = useState(false);
     const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
@@ -724,7 +752,7 @@ const HospitalManagementAgent = () => {
                     <Activity className="w-4 h-4 mr-2" />
                     AI Diagnosis
                   </h3>
-                  <p className="text-sm mb-3">{patient.diagnosis}</p>
+                  <p className="text-sm mb-3">{cleanText(patient.diagnosis)}</p>
 
                   <button
                     onClick={handleRunDiagnosis}
@@ -761,7 +789,7 @@ const HospitalManagementAgent = () => {
                   {/* Primary Diagnosis */}
                   <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
                     <h4 className="font-semibold text-blue-800 mb-2">Primary Diagnosis</h4>
-                    <p className="text-sm">{diagnosisResult.primary_diagnosis}</p>
+                    <p className="text-sm">{cleanText(diagnosisResult.primary_diagnosis)}</p>
                     <p className="text-xs text-blue-600 mt-1">
                       Confidence: {Math.round(diagnosisResult.confidence_score * 100)}%
                     </p>
@@ -775,7 +803,7 @@ const HospitalManagementAgent = () => {
                         {diagnosisResult.findings.map((finding: string, idx: number) => (
                           <li key={idx} className="flex items-start">
                             <span className="text-blue-500 mr-2">•</span>
-                            <span>{finding}</span>
+                            <span>{cleanText(finding)}</span>
                           </li>
                         ))}
                       </ul>
@@ -790,7 +818,7 @@ const HospitalManagementAgent = () => {
                         {diagnosisResult.differential_diagnoses.map((diff: any, idx: number) => (
                           <div key={idx} className="text-sm">
                             <div className="flex justify-between">
-                              <span className="font-medium">{diff.diagnosis}</span>
+                              <span className="font-medium">{cleanText(diff.diagnosis)}</span>
                               <span className="text-yellow-600">{Math.round(diff.probability * 100)}%</span>
                             </div>
                             <p className="text-xs text-gray-600 ml-2">{diff.reasoning}</p>

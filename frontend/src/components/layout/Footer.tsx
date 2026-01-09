@@ -8,11 +8,11 @@ const Footer: React.FC = () => {
         <a href="#" className="hover:text-gray-800 transition-colors">Privacy Policy</a>
         <a href="#" className="hover:text-gray-800 transition-colors">Terms of Service</a>
       </div>
+
       <div className="mt-4">
         <p>© 2025 MediMind AI. All rights reserved.</p>
-        <p className="text-sm mt-2">Powered by AI & Streamlit</p>
       </div>
-    </footer>
+    </footer >
   );
 };
 

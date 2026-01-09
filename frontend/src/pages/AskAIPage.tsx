@@ -1,6 +1,7 @@
 import { FC, useState, useRef, useEffect } from 'react';
 import MainLayout from '../components/layout/MainLayout';
 import ReactMarkdown from 'react-markdown';
+import { useAuth } from '../context/AuthContext';
 
 interface ChatMessage {
   role: 'user' | 'ai';
@@ -14,6 +15,7 @@ interface ChatMessage {
 }
 
 const AskAIPage: FC = () => {
+  const { user } = useAuth(); // NEW: Get user context
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'ai',
@@ -59,7 +61,9 @@ const AskAIPage: FC = () => {
           conversation_history: conversationHistory.map(msg => ({
             role: msg.role,
             content: msg.content
-          }))
+          })),
+          // Pass username as patient_id if it's a patient/user role
+          patient_id: user?.role === 'user' ? user.username : undefined
         }),
       });
 

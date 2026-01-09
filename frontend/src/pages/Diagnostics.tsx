@@ -359,6 +359,10 @@ const DiagnosticsPage: FC = () => {
     </div>
   );
 
+  const cleanText = (text: string) => {
+    return text.replace(/\*\*/g, "").replace(/##/g, "").trim();
+  };
+
   const renderResultsTab = () => (
     <div className="p-6">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Diagnostic Results</h2>
@@ -386,7 +390,7 @@ const DiagnosticsPage: FC = () => {
             <div className="flex items-start">
               <div className="text-2xl mr-3">{getSeverityIcon(results.severity)}</div>
               <div className="flex-1">
-                <h3 className="text-xl font-bold mb-2">{results.primary_diagnosis}</h3>
+                <h3 className="text-xl font-bold mb-2">{cleanText(results.primary_diagnosis)}</h3>
                 <p className="text-sm mb-2">{getSeverityMessage(results.severity)}</p>
                 <div className="flex items-center space-x-4">
                   <span className="text-sm font-medium">Confidence: {Math.round(results.confidence_score * 100)}%</span>
@@ -408,7 +412,7 @@ const DiagnosticsPage: FC = () => {
                 {results.differential_diagnoses.map((diff, index) => (
                   <div key={index} className="border-l-2 border-gray-300 pl-4">
                     <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-gray-800">{diff.diagnosis}</h4>
+                      <h4 className="font-medium text-gray-800">{cleanText(diff.diagnosis)}</h4>
                       <span className="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded">
                         {Math.round(diff.probability * 100)}%
                       </span>
