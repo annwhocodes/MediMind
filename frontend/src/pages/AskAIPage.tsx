@@ -1,4 +1,6 @@
 import { FC, useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import MainLayout from '../components/layout/MainLayout';
 
 interface ChatMessage {
@@ -158,7 +160,11 @@ const AskAIPage: FC = () => {
   const renderMessageContent = (message: ChatMessage) => {
     return (
       <div>
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        <div className={`prose prose-sm max-w-none ${message.role === 'user' ? 'prose-invert text-white' : 'prose-slate'}`}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
+        </div>
         {message.sources && message.sources.length > 0 && (
           <div className="mt-3 pt-3 border-t border-gray-200">
             <p className="text-xs font-medium text-gray-600 mb-2">Sources:</p>

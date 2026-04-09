@@ -4,7 +4,7 @@ import os  # <== missing in your snippet
 
 load_dotenv()
 
-# ✅ Get the actual values from environment
+# Get the actual values from environment
 api_key = os.getenv("GOOGLE_API_KEY")
 cse_id = os.getenv("GOOGLE_CSE_ID")
 

@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FC } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer } from 'recharts';
-import { Users, Bed, AlertTriangle, UserCheck, FileText, Activity, TrendingUp, Calendar, Heart, Thermometer, BedDouble, Filter, X } from 'lucide-react';
+import { Users, Bed, AlertTriangle, UserCheck, FileText, Activity, TrendingUp, Calendar, Heart, Thermometer, BedDouble, Filter, X, Download } from 'lucide-react';
 import * as Papa from 'papaparse';
 import { useNavigate } from 'react-router-dom';
 import MainLayout from '../components/layout/MainLayout';
@@ -344,7 +344,8 @@ const HospitalManagementAgent = () => {
         department: customPatient.department || 'General'
       };
 
-      setCsvData([...csvData, newPatient]);
+      const updatedData = [...csvData, newPatient];
+      setCsvData(updatedData);
 
       setCustomPatient({
         name: '',
@@ -362,6 +363,36 @@ const HospitalManagementAgent = () => {
 
       setShowAddForm(false);
     }
+  };
+
+  const exportToCSV = (dataToExport: Patient[] = csvData) => {
+    if (dataToExport.length === 0) return;
+    
+    const exportFormattedData = dataToExport.map(p => ({
+      name: p.name,
+      age: p.age,
+      gender: p.gender,
+      bed_number: p.bedNumber,
+      bed_type: p.bedType,
+      status: p.status,
+      priority: p.priority,
+      admission_date: p.admissionDate,
+      symptoms: p.symptoms,
+      medical_history: p.medicalHistory,
+      vitals: JSON.stringify(p.vitals),
+      diagnosis: p.diagnosis,
+      department: p.department
+    }));
+    
+    const csv = Papa.unparse(exportFormattedData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.setAttribute('download', `Hospital_Patients_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const getDashboardStats = useMemo(() => {
@@ -520,7 +551,51 @@ const HospitalManagementAgent = () => {
     </div>
   );
 
-  const PatientModal: FC<PatientModalProps> = ({ patient, onClose }) => (
+  const PatientModal: FC<PatientModalProps> = ({ patient, onClose }) => {
+    const [isDiagnosing, setIsDiagnosing] = useState(false);
+    const [detailedDiagnosis, setDetailedDiagnosis] = useState<any>(null);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+    const handleRunDiagnosis = async () => {
+      setIsDiagnosing(true);
+      try {
+        const payloadVitals: Record<string, number> = {};
+        if (patient.vitals) {
+           if (typeof patient.vitals.temperature === 'number') payloadVitals.temperature = patient.vitals.temperature;
+           if (typeof patient.vitals.heartRate === 'number') payloadVitals.heartRate = patient.vitals.heartRate;
+           // Omitting blood pressure string to comply with backend expect Dict[str, float]
+        }
+        
+        const response = await fetch("http://127.0.0.1:8000/analyze-symptoms", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            symptoms: patient.symptoms ? patient.symptoms.split(',').map(s => s.trim()) : [],
+            medical_history: patient.medicalHistory || "",
+            age: typeof patient.age === 'number' ? patient.age : (parseInt(patient.age as unknown as string) || null),
+            gender: patient.gender || null,
+            vital_signs: Object.keys(payloadVitals).length > 0 ? payloadVitals : null
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch diagnosis");
+        }
+
+        const data = await response.json();
+        setDetailedDiagnosis(data);
+        setErrorMsg(null);
+      } catch (error) {
+        console.error("Diagnosis error:", error);
+        setErrorMsg("Error analyzing patient data. Please ensure backend is running.");
+      } finally {
+        setIsDiagnosing(false);
+      }
+    };
+
+    return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="p-6">
@@ -580,19 +655,94 @@ const HospitalManagementAgent = () => {
               <div className="bg-red-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-red-800 mb-2 flex items-center">
                   <Activity className="w-4 h-4 mr-2" />
-                  AI Diagnosis
+                  Preliminary AI Diagnosis
                 </h3>
-                <p className="text-sm">{patient.diagnosis}</p>
-                <button className="mt-2 bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition-colors">
-                  Run Full Diagnostic Analysis
+                <div className="text-sm border border-red-100 p-3 rounded bg-white whitespace-pre-wrap mb-3 text-gray-800 shadow-sm">
+                  {patient.diagnosis}
+                </div>
+                <button 
+                  onClick={handleRunDiagnosis}
+                  disabled={isDiagnosing}
+                  className="mt-3 w-full bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition-colors disabled:bg-red-400 disabled:cursor-not-allowed flex justify-center items-center"
+                >
+                  {isDiagnosing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                      Analyzing...
+                    </>
+                  ) : (
+                    "Run Full Diagnostic Analysis"
+                  )}
                 </button>
               </div>
             </div>
           </div>
+
+          {errorMsg && (
+            <div className="mt-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg">
+              {errorMsg}
+            </div>
+          )}
+
+          {detailedDiagnosis && (
+            <div className="mt-6 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <div className="bg-gradient-to-r from-red-600 to-red-800 p-4 flex justify-between items-center">
+                <h3 className="font-bold text-white text-lg flex items-center">
+                  <Activity className="w-5 h-5 mr-2" />
+                  Detailed Diagnostic Analysis
+                </h3>
+                <span className="bg-white text-red-800 px-3 py-1 rounded-full text-sm font-bold shadow-sm">
+                  {Math.round(detailedDiagnosis.confidence_score * 100)}% AI Match Confidence
+                </span>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Primary Diagnosis</h4>
+                  <p className="text-lg font-medium text-gray-900 border-l-4 border-red-500 pl-4">{detailedDiagnosis.primary_diagnosis}</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {detailedDiagnosis.recommendations && detailedDiagnosis.recommendations.length > 0 && (
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                      <h4 className="font-bold text-blue-800 text-sm uppercase mb-3 flex items-center">
+                        <span className="text-xl mr-2">🩺</span> Recommendations
+                      </h4>
+                      <ul className="space-y-2 text-sm text-gray-700">
+                        {detailedDiagnosis.recommendations.map((rec: string, idx: number) => (
+                          <li key={idx} className="flex">
+                            <span className="text-blue-500 mr-2 font-bold">•</span>
+                            <span>{rec}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {detailedDiagnosis.findings && detailedDiagnosis.findings.length > 0 && (
+                    <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+                      <h4 className="font-bold text-green-800 text-sm uppercase mb-3 flex items-center">
+                        <span className="text-xl mr-2">🔍</span> Key Findings
+                      </h4>
+                      <ul className="space-y-2 text-sm text-gray-700">
+                        {detailedDiagnosis.findings.map((finding: string, idx: number) => (
+                          <li key={idx} className="flex">
+                            <span className="text-green-500 mr-2 font-bold">•</span>
+                            <span>{finding}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
+};
 
   return (
     <MainLayout>
@@ -615,10 +765,18 @@ const HospitalManagementAgent = () => {
                 />
                 <label
                   htmlFor="csv-upload"
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors cursor-pointer flex items-center"
                 >
+                  <FileText className="w-4 h-4 mr-2" />
                   Upload CSV
                 </label>
+                <button
+                  onClick={() => exportToCSV(csvData)}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors flex items-center"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export CSV
+                </button>
                 <button
                   onClick={() => setShowAddForm(true)}
                   className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"

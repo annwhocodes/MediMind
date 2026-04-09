@@ -45,23 +45,23 @@ async def lifespan(app: FastAPI):
     global diagnostic_agent, search_agent, hospital_operations_agent
     
     try:
-        gemini_key = os.getenv("GEMINI_API_KEY")
+        groq_key = os.getenv("GROQ_API_KEY")
         google_key = os.getenv("GOOGLE_API_KEY")
         google_cse_id = os.getenv("GOOGLE_CSE_ID")
         
-        if not gemini_key:
-            raise ValueError("GEMINI_API_KEY environment variable is required")
+        if not groq_key:
+            raise ValueError("GROQ_API_KEY environment variable is required")
         
         # Initialize diagnostic agent
         diagnostic_agent = MedicalDiagnosticAgent(
-            gemini_api_key=gemini_key,
+            gemini_api_key=groq_key,
             google_api_key=google_key,
             google_cse_id=google_cse_id
         )
         
         # Initialize search agent
         search_agent = MedicalSearchAgent(
-            gemini_api_key=gemini_key,
+            gemini_api_key=groq_key,
             google_api_key=google_key,
             google_cse_id=google_cse_id,
             pdf_directory="medical_papers"  # Directory for medical papers

@@ -9,7 +9,7 @@ import hashlib
 import os
 from urllib.parse import quote, urljoin
 from bs4 import BeautifulSoup
-import google.generativeai as genai
+from llm_wrapper import GroqGenerativeModel
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
@@ -55,8 +55,7 @@ class MedicalWebSearcher:
         self.gemini_api_key = gemini_api_key
         self.google_cse_id = google_cse_id
         self.google_api_key = google_api_key
-        genai.configure(api_key=gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = GroqGenerativeModel(api_key=gemini_api_key)
         self.session = None
         
         # Initialize Google Custom Search if credentials provided
@@ -485,8 +484,7 @@ class MedicalRAGSystem:
     
     def __init__(self, gemini_api_key: str, vector_store_path: str = "medical_vectors.faiss"):
         self.gemini_api_key = gemini_api_key
-        genai.configure(api_key=gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = GroqGenerativeModel(api_key=gemini_api_key)
         
         # Initialize sentence transformer for embeddings
         self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
@@ -730,8 +728,7 @@ class MedicalSearchAgent:
         
         # If we have both responses, combine them intelligently
         if len(responses) > 1:
-            genai.configure(api_key=self.gemini_api_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = GroqGenerativeModel(api_key=self.gemini_api_key)
             
             combine_prompt = f"""
             You have two sources of medical information for the question: "{query}"

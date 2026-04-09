@@ -10,7 +10,7 @@ from datetime import datetime
 import PyPDF2
 from pathlib import Path
 import pickle
-import google.generativeai as genai
+from llm_wrapper import GroqGenerativeModel
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 import torch
 from sentence_transformers import SentenceTransformer
@@ -53,8 +53,7 @@ class MedicalDiagnosticAgent:
     
     def __init__(self, gemini_api_key: str, google_api_key: str = None, google_cse_id: str = None):
         self.gemini_api_key = gemini_api_key
-        genai.configure(api_key=gemini_api_key)
-        self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+        self.gemini_model = GroqGenerativeModel(api_key=gemini_api_key)
         
         # Initialize search agent
         self.search_agent = MedicalSearchAgent(

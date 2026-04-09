@@ -1,6 +1,7 @@
 // src/pages/Diagnostics.tsx
 
 import { FC, useState, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
 
 interface DiagnosticResult {
@@ -39,6 +40,26 @@ const DiagnosticsPage: FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [history, setHistory] = useState<DiagnosticResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  
+  const location = useLocation();
+
+  useEffect(() => {
+    // Check if we navigated here with patient data
+    if (location.state && location.state.patient) {
+      const patient = location.state.patient;
+      
+      // Populate symptoms (splitting comma-separated symptoms or taking as is)
+      if (patient.symptoms) {
+        const patientSymptoms = patient.symptoms.split(',').map((s: string) => s.trim());
+        setSymptoms(patientSymptoms);
+      }
+      
+      // Populate medical history
+      if (patient.medicalHistory) {
+        setMedicalHistory(patient.medicalHistory);
+      }
+    }
+  }, [location.state]);
 
   useEffect(() => {
     const saved = localStorage.getItem("diagnosticHistory");
